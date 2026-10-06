@@ -4,17 +4,17 @@ Native Cross Session Messaging Between Claude and Codex
 
 `friends` lets your existing Claude Code and Codex conversations talk through native messaging. No MCP server or extra service.
 
-Experimental; tested on macOS. Requires [Bun](https://bun.sh) and both CLIs on one machine.
+Experimental; tested on macOS. Requires [Node.js](https://nodejs.org) for installation, [Bun](https://bun.sh) and both CLIs on one machine.
 
 ## Install
 
 In your project (Git needs access to this private repo):
 
 ```sh
-bunx --bun skills add lucharo/friends \
+npx skills add lucharo/friends \
   --skill message-claude \
   --agent codex
-bunx --bun skills add lucharo/friends \
+npx skills add lucharo/friends \
   --skill message-codex \
   --agent claude-code
 ```
