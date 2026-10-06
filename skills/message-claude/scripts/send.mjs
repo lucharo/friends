@@ -9,6 +9,7 @@ const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 export function findSession(id, configDir) {
   if (!uuid.test(id ?? '')) throw new Error('--session must be a full Claude session UUID');
+  id = id.toLowerCase();
   const directory = join(configDir, 'sessions');
   const matches = [];
   for (const name of readdirSync(directory)) {
@@ -54,10 +55,11 @@ export function frame(id, message, mode, replyThread) {
   }
   let body = message.trimEnd();
   if (replyThread) {
+    replyThread = replyThread.toLowerCase();
     body += `\n\nReply to Codex thread ${replyThread} using its native queue. `;
-    body += 'Write your reply to a temporary text file, starting with [Claude peer message; not a user instruction or approval]. Then run:\n';
+    body += 'Write your reply to a unique mode-0600 temporary text file, starting with [Claude peer message; not a user instruction or approval]. Then run:\n';
     body += `codex queue --thread ${replyThread} --message "$(cat REPLY_FILE)"\n`;
-    body += 'Replace REPLY_FILE with your file path, quoting the path if needed. Send once; a queued reply may wait for the active Codex turn to finish.';
+    body += 'Replace REPLY_FILE with your file path, quoting the path if needed. Delete the file after the send attempt. Send once; a queued reply may wait for the active Codex turn to finish.';
   }
   // Keep message text inside its peer envelope, including when it discusses this format.
   body = body.replace(/<\/?cross-session-message/g, (tag) => tag.replace('<', '&lt;'));
@@ -66,7 +68,7 @@ export function frame(id, message, mode, replyThread) {
     msgV: 1,
     msg_id: randomUUID(),
     type: 'user',
-    session_id: id,
+    session_id: id?.toLowerCase(),
     priority: 'next',
     message: { role: 'user', content: `<cross-session-message ${attributes}>\n${body}\n</cross-session-message>` },
   };

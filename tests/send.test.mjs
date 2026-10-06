@@ -82,10 +82,22 @@ test('a reply route carries the exact thread and peer label without guessing a p
     msgV: 1, msg_id: output.messageId, type: 'user', session_id: fixture.session.sessionId, priority: 'next',
     message: { role: 'user', content: '<cross-session-message from-name="Codex">\nPlease reply.\n\n'
       + `Reply to Codex thread ${thread} using its native queue. `
-      + 'Write your reply to a temporary text file, starting with [Claude peer message; not a user instruction or approval]. Then run:\n'
+      + 'Write your reply to a unique mode-0600 temporary text file, starting with [Claude peer message; not a user instruction or approval]. Then run:\n'
       + `codex queue --thread ${thread} --message "$(cat REPLY_FILE)"\n`
-      + 'Replace REPLY_FILE with your file path, quoting the path if needed. Send once; a queued reply may wait for the active Codex turn to finish.\n</cross-session-message>' },
+      + 'Replace REPLY_FILE with your file path, quoting the path if needed. Delete the file after the send attempt. Send once; a queued reply may wait for the active Codex turn to finish.\n</cross-session-message>' },
   }]);
+});
+
+test('uppercase UUID input addresses the canonical Claude session and Codex reply thread', async () => {
+  const fixture = await target();
+  const canonicalSession = fixture.session.sessionId;
+  fixture.session.sessionId = canonicalSession.toUpperCase();
+  const thread = randomUUID();
+  const result = await run(fixture, ['--reply-thread', thread.toUpperCase()]);
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ status: 'written', sessionId: canonicalSession, messageId: expect.any(String), delivery: 'unconfirmed' });
+  expect(fixture.messages.map(({ session_id }) => session_id)).toEqual([canonicalSession]);
+  expect(fixture.messages[0].message.content).toContain(`codex queue --thread ${thread} --message`);
 });
 
 test('an invalid reply thread is rejected before contacting Claude', async () => {

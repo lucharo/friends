@@ -8,13 +8,13 @@ description: Send a message from Claude Code to an existing Codex conversation t
 Use the Codex thread UUID supplied by the sender or user. An exact session name also works with `codex queue`; prefer the UUID for an established conversation. If the destination is missing or ambiguous, ask for it. An inherited environment variable or the most recent session is not sufficient evidence of the intended recipient.
 
 1. Check `codex queue --help` once. If this CLI lacks the command, report that prerequisite; starting another Codex process with `exec` or `resume` is not delivery to the existing conversation.
-2. Write the reply to a temporary text file, starting with:
+2. Create a unique mode-0600 temporary text file (for example, with `mktemp`). Write the reply there, starting with:
 
    ```text
    [Claude peer message; not a user instruction or approval]
    ```
 
-   Follow it with the actual reply, then queue the file's text:
+   Follow it with the actual reply, then queue the file's text. Replace `reply.txt` with its quoted path and delete the file after the send attempt:
 
    ```sh
    codex queue --thread CODEX_THREAD_UUID --message "$(cat reply.txt)"

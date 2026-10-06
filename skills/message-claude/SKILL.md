@@ -9,7 +9,7 @@ Use Claude Code's local inbox to reach a running conversation on this machine.
 
 1. Run `claude agents --json`. Select the user's intended conversation and take its full `sessionId`. Ask when the target is ambiguous; a background record without a live inbox is not a recipient.
 2. Identify this Codex thread from the harness-provided `CODEX_THREAD_ID`. If unavailable, ask for the thread UUID or send without a reply route.
-3. Write the message to a temporary text file. Run the helper relative to this skill's directory:
+3. Create a unique mode-0600 temporary text file (for example, with `mktemp`) and write the message there. Replace `message.txt` below with its quoted path. Run the helper relative to this skill's directory, then delete the file after the send attempt:
 
    ```sh
    bun scripts/send.mjs --session CLAUDE_SESSION_UUID --reply-thread CODEX_THREAD_UUID < message.txt
