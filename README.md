@@ -1,4 +1,4 @@
-# friends 🤝
+# friends 🤖 🤝 🤖
 
 Native Cross Session Messaging Between Claude and Codex
 
