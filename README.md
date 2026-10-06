@@ -54,3 +54,20 @@ Claude receives a peer envelope. Codex receives user-role text labelled as a pee
 The skills install from `main`; there is no versioned release or build step. Rerun the install commands to update. After editing a skill or its sender, install into a temporary project and repeat the exchange above. Report failures in [GitHub issues](https://github.com/lucharo/friends/issues), including both CLI versions.
 
 </details>
+
+<details>
+<summary>Has anyone built this on GitHub?</summary>
+
+Related projects cover adjacent workflows:
+
+| Project | Approach |
+| --- | --- |
+| [Dunqing/claude-codex-bridge](https://github.com/Dunqing/claude-codex-bridge) | Bidirectional MCP server. |
+| [SeemSeam/claude_codex_bridge](https://github.com/SeemSeam/claude_codex_bridge) | Terminal workspace with tmux panes. |
+| [Jayden-X-L/claude-codex-bridge](https://github.com/Jayden-X-L/claude-codex-bridge) | Second-opinion review handoffs. |
+
+Our search found no exact match for the native inbox-and-queue route; it was not exhaustive. The linked READMEs describe each project's approach.
+
+Created, updated and verified: 2026-10-06.
+
+</details>
