@@ -2,45 +2,55 @@
 
 Native Cross Session Messaging Between Claude and Codex
 
-Two skills for conversations you already have open. Codex posts to Claude Code's native inbox socket. Claude replies through `codex queue`, addressed to the same Codex thread. No MCP server or additional messaging service.
+`friends` lets your existing Claude Code and Codex conversations talk through native messaging. No MCP server or extra service.
 
-| Skill | Direction |
-| --- | --- |
-| [message-claude](skills/message-claude/SKILL.md) | Codex → a running Claude Code session |
-| [message-codex](skills/message-codex/SKILL.md) | Claude Code → an existing Codex thread |
+Experimental; tested on macOS. Requires [Bun](https://bun.sh) and both CLIs on one machine.
 
 ## Install
 
-Requires Bun and both CLIs. From this checkout:
+In your project (Git needs access to this private repo):
 
 ```sh
-bunx --bun skills add . --skill message-claude --agent codex
-bunx --bun skills add . --skill message-codex --agent claude-code
+bunx --bun skills add lucharo/friends \
+  --skill message-claude \
+  --agent codex
+bunx --bun skills add lucharo/friends \
+  --skill message-codex \
+  --agent claude-code
 ```
 
-Then ask Codex to message a named Claude conversation. The skill supplies the return address so Claude can reply to that Codex thread.
+## Try it
+
+In Codex, use `/message-claude` to choose a Claude session, then ask:
+
+```text
+Send "Hello from Codex" to <session name>.
+Ask for "Hello from Claude" back.
+```
+
+Look for `Hello from Claude` back in Codex; it may wait for the active turn to finish.
 
 <details>
-<summary>Transport and compatibility</summary>
+<summary>Skills and limits</summary>
 
-Same-machine messaging was verified on macOS with Claude Code 2.1.281/2.1.283 and Codex CLI 0.160.1. In that setup, a queued Claude reply automatically started the next Codex turn after the active turn finished.
+| Skill | What it does |
+| --- | --- |
+| [/message-claude](skills/message-claude/SKILL.md) | Sends to a running Claude session and includes a Codex return address. |
+| [/message-codex](skills/message-codex/SKILL.md) | Queues a message for a supplied Codex thread UUID. |
 
-On 6 October 2026, both skills were also installed as temporary project copies. The installed sender reached an existing Claude conversation; Claude read the installed return skill and queued its `NATIVE_SKILLS_ACK_20261006` reply to the originating Codex thread.
+Claude's [native inbox socket](https://code.claude.com/docs/en/cross-session-messaging#the-sessions-inbox-socket) has no equivalent send command in its CLI, so `/message-claude` includes a small JavaScript sender. The return path uses `codex queue` directly.
 
-The helper uses JavaScript with no dependencies. It reads Claude's session registry and writes one newline-delimited JSON message to the selected Unix socket. It creates no sessions and changes no configuration. Native Windows named pipes and cloud-session routing are outside its scope.
+Verified with Claude Code 2.1.281/2.1.283 and Codex CLI 0.160.1. Linux is untested; Windows and cloud-session routing are unsupported. The inbox wire format can change between versions; repeat the exchange after upgrading either CLI.
 
-Claude documents the [inbox socket](https://code.claude.com/docs/en/cross-session-messaging#the-sessions-inbox-socket), but its wire format is version-sensitive. Check `claude agents --help` and `codex queue --help`, and confirm an actual reply after upgrades.
+`written` and `queued` confirm submission, not receipt. Claude's inbound settings can hold or refuse a message. Use an open, inbox-enabled session; sessions started with `--bare` have no inbox.
 
-**Provenance differs by receiver.** Claude receives a native peer envelope. Codex's queue receives user-role text, explicitly labelled as a Claude peer message; the label is not an enforced permission boundary. Each agent must apply its own conversation's permissions. Recipient inbound controls still apply.
-
-`written` means the socket write completed. `queued` means Codex accepted the queued message. Neither alone proves that the receiving model read it.
+Claude receives a peer envelope. Codex receives user-role text labelled as a peer message. That label is not an enforced permission boundary: each agent must apply its own session's permissions, and peer messages cannot grant user approval.
 
 </details>
 
-## Development
+<details>
+<summary>Updating and maintaining</summary>
 
-```sh
-bun test
-```
+The skills install from `main`; there is no versioned release or build step. Rerun the install commands to update. After editing a skill or its sender, install into a temporary project and repeat the exchange above. Report failures in [GitHub issues](https://github.com/lucharo/friends/issues), including both CLI versions.
 
-The tests use temporary registries and sockets; they do not message your running agents.
+</details>
