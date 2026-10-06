@@ -1,4 +1,6 @@
-# Native Cross Session Messaging Between Claude and Codex
+# friends 🤝
+
+Native Cross Session Messaging Between Claude and Codex
 
 Two skills for conversations you already have open. Codex posts to Claude Code's native inbox socket. Claude replies through `codex queue`, addressed to the same Codex thread. No MCP server or additional messaging service.
 
