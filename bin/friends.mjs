@@ -27,10 +27,11 @@ function table(rows, me) {
     cut(r.name ?? '(unnamed)', 48),
     r.id,
     home(r.cwd ?? ''),
-    (r.canReceive ? 'yes' : 'no') + (me && me.harness === r.harness && me.id === r.id ? ' (you)' : ''),
+    (r.canReceive ? 'yes' : r.registered === false ? 'no*' : 'no') + (me && me.harness === r.harness && me.id === r.id ? ' (you)' : ''),
   ]);
   const head = ['HARNESS', 'NAME', 'ID', 'CWD', 'RECEIVE'];
-  const note = cells.some((c) => c[1].endsWith('…')) ? '\nNames ending in … are cut; target those sessions by id.' : '';
+  let note = cells.some((c) => c[1].endsWith('…')) ? '\nNames ending in … are cut; target those sessions by id.' : '';
+  if (rows.some((r) => r.registered === false && !r.canReceive)) note += '\nno*: a live Claude session Claude Code wrote no session record for, so it has no inbox; found from its process and transcript.';
   const width = head.map((h, i) => Math.max(h.length, ...cells.map((c) => c[i].length)));
   return [head, ...cells].map((c) => c.map((v, i) => (i === c.length - 1 ? v : v.padEnd(width[i]))).join('  ')).join('\n') + note;
 }

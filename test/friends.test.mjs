@@ -1,11 +1,12 @@
 import { Database } from 'bun:sqlite';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { claudeFrame, codexSessions, compose, label, parseTarget, piShort, replyRoute, resolve, send, shellQuote } from '../lib/friends.mjs';
+import { claudeFrame, claudeSessions, codexSessions, compose, label, parseTarget, piShort, replyRoute, resolve, send, shellQuote } from '../lib/friends.mjs';
+import { etimeSeconds, limits, probes, transcriptMeta } from '../lib/claude-procs.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'friends-test-'));
 const CLAUDE_ID = '11111111-2222-4333-8444-555555555555';
@@ -25,6 +26,11 @@ beforeAll(async () => {
   process.env.FRIENDS_REMOTE_HOST = '';
   // sender detection must see only these fixtures, not the harness running the tests
   delete process.env.CODEX_THREAD_ID;
+  delete process.env.CLAUDE_CODE_SESSION_ID;
+  delete process.env.CLAUDE_PID;
+  // and no real process table: tests that need one install a fake
+  probes.ps = () => '';
+  probes.lsof = () => '';
 
   // a fake `codex` that logs its argv and answers like codex queue, or fails when FAKE_CODEX says so
   mkdirSync(join(root, 'bin'));
@@ -224,5 +230,202 @@ describe('automatic sender detection', () => {
     const mail = JSON.parse(readFileSync(join(dir, readdirSync(dir).sort().at(-1)), 'utf8'));
     expect(mail).toMatchObject({ harness: 'claude', from: { name: 'parent-claude' } });
     expect(mail.text).toEndWith('No reply route: the sending session (claude:99999999-2222-4333-8444-555555555555) cannot receive messages.');
+  });
+});
+
+describe('Claude sessions without a session record', () => {
+  const NO_RECORD = 'Claude Code wrote no session record for this process, so it has no inbox socket to write to.';
+  const INFERRED = ' It was matched to its process by folder and newest transcript, not proven.';
+  const id = (n) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const U1 = id(1); const DESKTOP = id(2); const OLD = id(3); const CLEARED = id(4); const V1 = id(5); const W1 = id(6);
+  const projects = () => join(root, 'claude', 'projects');
+  const now = Date.now();
+  const lines = (...entries) => entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
+  const transcript = (dir, sid, ageSec, entries) => {
+    mkdirSync(join(projects(), dir), { recursive: true });
+    const file = join(projects(), dir, `${sid}.jsonl`);
+    writeFileSync(file, lines(...entries));
+    const t = (now - ageSec * 1000) / 1000;
+    utimesSync(file, t, t);
+    return file;
+  };
+  const user = (cwd, entrypoint = 'cli') => ({ type: 'user', cwd, entrypoint, version: '2.1.300', message: { role: 'user', content: 'hi' } });
+  // procs: [pid, etime, tty, comm]; files: pid -> { cwd, reg: [], unix: [] }
+  let procs = [];
+  let files = {};
+  let lsofCalls = [];
+  const install = () => {
+    probes.ps = () => procs.map(([pid, etime, tty, comm]) => `${pid} 1 ${etime} ${tty} ${comm}`).join('\n');
+    probes.lsof = (pids) => {
+      lsofCalls.push(pids);
+      return pids.filter((p) => files[p]).map((p) => [`p${p}`, 'fcwd', 'tDIR', `n${files[p].cwd}`,
+        ...(files[p].reg ?? []).flatMap((n, i) => [`f${20 + i}`, 'tREG', `n${n}`]),
+        ...(files[p].unix ?? []).flatMap((n, i) => [`f${40 + i}`, 'tunix', `n${n}`])].join('\n')).join('\n');
+    };
+  };
+  const CLI = '/Users/x/.bun/install/global/node_modules/@anthropic-ai/claude-code-darwin-arm64/claude';
+  let sockServer;
+  let otherServer;
+  const sockReceived = [];
+
+  beforeAll(async () => {
+    transcript('-tmp-u', U1, 60, [user('/tmp/u'), { type: 'ai-title', aiTitle: 'Disk-cleanup' }, { type: 'custom-title', customTitle: 'disk-cleanup-emergency' }, { type: 'agent-name', agentName: 'disk-cleanup-emergency' }]);
+    transcript('-tmp-u', DESKTOP, 30, [user('/tmp/u', 'claude-desktop-3p'), { type: 'custom-title', customTitle: 'desktop one' }]);
+    transcript('-tmp-u', CLAUDE_ID, 10, [user('/tmp/u'), { type: 'custom-title', customTitle: 'has a record' }]);
+    transcript('-tmp-u', OLD, 700, [user('/tmp/u'), { type: 'custom-title', customTitle: 'before start' }]);
+    transcript('-tmp-u', CLEARED, 300, [user('/tmp/u'), { type: 'ai-title', aiTitle: 'Before clear' }]);
+    transcript('-tmp-v', V1, 5000, [user('/tmp/v'), { type: 'agent-name', agentName: 'helper-name' }]);
+    transcript('-tmp-w', W1, 20, [user('/tmp/w'), { type: 'custom-title', customTitle: 'socketed' }]);
+    transcript('-tmp-stale', id(9), 9000, [user('/tmp/stale'), { type: 'custom-title', customTitle: 'finished long ago' }]);
+    mkdirSync(join(root, 'socks'));
+    sockServer = createServer((c) => { let buf = ''; c.on('data', (d) => { buf += d; }); c.on('end', () => sockReceived.push(buf)); });
+    await new Promise((r) => sockServer.listen(join(root, 'socks', '900006.sock'), r));
+    // another live socket the process listens on, which is not its inbox
+    otherServer = createServer(() => {});
+    await new Promise((r) => otherServer.listen(join(root, 'socks', 'other.sock'), r));
+  });
+  afterAll(() => {
+    sockServer?.close();
+    otherServer?.close();
+    probes.ps = () => '';
+    probes.lsof = () => '';
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+    delete process.env.CLAUDE_PID;
+  });
+
+  const base = { harness: 'claude', host: 'local', status: null, registered: false, entrypoint: 'cli' };
+  const recordRow = { harness: 'claude', name: 'Test Claude', id: CLAUDE_ID, cwd: '/tmp/c', host: 'local', canReceive: true, pid: process.pid, entrypoint: null, status: null };
+  const defaultProcs = () => [
+    [900001, '10:00', 'ttys001', CLI], // terminal session in /tmp/u
+    [900002, '1-02:00:00', '??', '/Applications/x/claude.app/Contents/MacOS/claude'], // holds its transcript open
+    [900003, '10:00', '??', CLI], // a background helper in /tmp/u: never claims by cwd
+    [900004, '10:00', 'ttys004', '/usr/local/bin/node'],
+    [process.pid, '10:00', 'ttys005', CLI], // has a record
+    [900007, '10:00', 'ttys007', CLI], // its directory holds only a transcript older than the process
+  ];
+  const defaultFiles = () => ({
+    900001: { cwd: '/tmp/u' },
+    900002: { cwd: '/tmp/v', reg: ['/usr/lib/x.dylib', join(projects(), '-tmp-v', `${V1}.jsonl`)] },
+    900003: { cwd: '/tmp/u' },
+    900007: { cwd: '/tmp/stale' },
+  });
+
+  test('a record-less terminal session is found from its process and its newest transcript, and cannot receive', () => {
+    procs = defaultProcs(); files = defaultFiles(); lsofCalls = []; install();
+    expect(claudeSessions()).toEqual([
+      recordRow,
+      { ...base, name: 'helper-name', id: V1, cwd: '/tmp/v', canReceive: false, pid: 900002, match: 'open-transcript', reason: NO_RECORD },
+      { ...base, name: 'disk-cleanup-emergency', id: U1, cwd: '/tmp/u', canReceive: false, pid: 900001, match: 'cwd-recent', reason: NO_RECORD + INFERRED },
+    ]);
+    // lsof only ever sees the record-less claude processes
+    expect(lsofCalls).toEqual([[900001, 900002, 900003, 900007]]);
+  });
+
+  test('resolve finds it by title and by uuid and says why it cannot receive', () => {
+    procs = defaultProcs(); files = defaultFiles(); install();
+    const why = (t) => `${t} is live (disk-cleanup-emergency ${U1} (/tmp/u), pid 900001) but cannot receive: ${NO_RECORD}${INFERRED}`;
+    expect(() => resolve('claude:disk-cleanup-emergency')).toThrow(why('claude:disk-cleanup-emergency'));
+    expect(() => resolve(`claude:${U1}`)).toThrow(why(`claude:${U1}`));
+  });
+
+  test('two record-less terminal sessions in one directory: both sessions listed, neither pinned to a pid', () => {
+    procs = [...defaultProcs(), [900005, '05:00', 'ttys002', CLI]];
+    files = { ...defaultFiles(), 900005: { cwd: '/tmp/u' } };
+    install();
+    const reason = `${NO_RECORD}${INFERRED} It is one of pids 900001, 900005, which share this directory.`;
+    expect(claudeSessions().filter((r) => r.cwd === '/tmp/u')).toEqual([
+      { ...base, name: 'disk-cleanup-emergency', id: U1, cwd: '/tmp/u', canReceive: false, pid: null, match: 'cwd-ambiguous', reason },
+      { ...base, name: 'Before clear', id: CLEARED, cwd: '/tmp/u', canReceive: false, pid: null, match: 'cwd-ambiguous', reason },
+    ]);
+  });
+
+  test('a record-less session holding its transcript open and listening on its <pid>.sock inbox receives through it', async () => {
+    procs = [[900006, '01:00', 'ttys006', CLI]];
+    files = { 900006: { cwd: '/tmp/w', reg: [join(projects(), '-tmp-w', `${W1}.jsonl`)], unix: [join(root, 'socks', 'other.sock'), join(root, 'socks', '900006.sock')] } };
+    install();
+    const row = resolve('claude:socketed');
+    expect(row).toEqual({ ...base, name: 'socketed', id: W1, cwd: '/tmp/w', canReceive: true, pid: 900006, match: 'open-transcript', messagingSocketPath: join(root, 'socks', '900006.sock') });
+    const out = await send('claude:socketed', 'via socket', { replyTo: `pi:${PI_ID}` });
+    expect(out).toMatchObject({ status: 'written', harness: 'claude', id: W1, replyRoute: true });
+    await Bun.sleep(50);
+    expect(JSON.parse(sockReceived.at(-1))).toMatchObject({ session_id: W1, msg_id: out.messageId });
+  });
+
+  test('a folder match never writes to the socket: a newer transcript from a closed session can win it', () => {
+    // the live session wrote 200 s ago; another session in the folder wrote 10 s ago and exited
+    transcript('-tmp-x', id(10), 200, [user('/tmp/x'), { type: 'custom-title', customTitle: 'still running' }]);
+    transcript('-tmp-x', id(11), 10, [user('/tmp/x'), { type: 'custom-title', customTitle: 'closed since' }]);
+    procs = [[900006, '10:00', 'ttys006', CLI]];
+    files = { 900006: { cwd: '/tmp/x', unix: [join(root, 'socks', '900006.sock')] } };
+    install();
+    expect(claudeSessions().filter((r) => r.cwd === '/tmp/x')).toEqual([{ ...base, name: 'closed since', id: id(11), cwd: '/tmp/x', canReceive: false, pid: 900006, match: 'cwd-recent',
+      reason: 'Claude Code wrote no session record for this process. It listens on an inbox socket, but this session was matched to it by folder and newest transcript, not proven, so friends will not write there.' }]);
+  });
+
+  test('with no record-less claude process, lsof is never run', () => {
+    procs = [[900004, '10:00', 'ttys004', '/usr/local/bin/node'], [process.pid, '10:00', 'ttys005', CLI]];
+    files = {}; install();
+    probes.lsof = () => { throw new Error('lsof ran'); };
+    expect(claudeSessions()).toEqual([recordRow]);
+  });
+
+  test('a record-less Claude ancestor is the sender when its Bash tool exported the session id', async () => {
+    procs = [[process.ppid, '10:00', 'ttys009', CLI]];
+    files = { [process.ppid]: { cwd: '/tmp/u' } };
+    install();
+    process.env.CLAUDE_CODE_SESSION_ID = U1;
+    process.env.CLAUDE_PID = String(process.ppid);
+    const out = await send('pi:alpha', 'from a record-less claude', {});
+    expect(out.replyRoute).toBe(false);
+    const dir = join(root, 'xsm', 'inbox', PI_ID);
+    const mailOf = (messageId) => JSON.parse(readFileSync(join(dir, readdirSync(dir).find((f) => f.endsWith(`-${messageId}.json`))), 'utf8'));
+    const mail = mailOf(out.messageId);
+    expect(mail.harness).toBe('claude');
+    expect(mail.from).toEqual({ id: `claude:${U1}`, name: 'disk-cleanup-emergency', cwd: '/tmp/u' });
+    expect(mail.text).toEndWith(`No reply route: the sending session (claude:${U1}) cannot receive messages.`);
+    // CLAUDE_PID naming another process means the id is inherited, not this ancestor's
+    process.env.CLAUDE_PID = '1';
+    const anon = await send('pi:alpha', 'inherited id', {});
+    const mail2 = mailOf(anon.messageId);
+    expect([anon.replyRoute, mail2.from]).toEqual([false, { id: 'friends', name: 'friends', cwd: '' }]);
+  });
+
+  test('transcript names: custom title, then agent name, then automatic title, each the latest', () => {
+    const small = transcript('-tmp-meta', id(7), 1, [{ type: 'ai-title', aiTitle: 'auto' }, { type: 'agent-name', agentName: 'old agent' }, { type: 'agent-name', agentName: 'agent' }]);
+    expect(transcriptMeta(small).name).toBe('agent');
+  });
+
+  describe('long transcripts, read backwards in small chunks', () => {
+    const saved = { ...limits };
+    beforeAll(() => Object.assign(limits, { chunk: 1000, back: 20_000, head: 3000 }));
+    afterAll(() => Object.assign(limits, saved));
+    const pad = (n) => Array.from({ length: n }, () => ({ type: 'assistant', pad: 'é'.repeat(300) }));
+
+    test('the latest custom title wins over an agent name in the tail; lines longer than a chunk still parse', () => {
+      // the rename line is longer than a chunk, so it always straddles a chunk boundary
+      const file = transcript('-tmp-meta', id(8), 1, [user('/tmp/old'), ...pad(5), user('/tmp/mid'), ...pad(5), { type: 'custom-title', customTitle: 'first' }, ...pad(5),
+        { type: 'custom-title', customTitle: 'renamed', pad: 'é'.repeat(700) }, ...pad(5), { type: 'agent-name', agentName: 'agent' }, { type: 'ai-title', aiTitle: 'late auto' }]);
+      // the launch fields come from the newest user line, past the newest title, not from the head
+      expect(transcriptMeta(file)).toEqual({ customTitle: 'renamed', agentName: 'agent', aiTitle: 'late auto', entrypoint: 'cli', cwd: '/tmp/mid', version: '2.1.300', name: 'renamed' });
+    });
+
+    test('past the backward window, the head fills in the title and the launch fields, the tail keeps the rest', () => {
+      const file = transcript('-tmp-meta', id(9), 1, [user('/tmp/u', 'claude-desktop-3p'), { type: 'custom-title', customTitle: 'named early' }, ...pad(200),
+        { type: 'ai-title', aiTitle: 'late auto' }]);
+      expect(transcriptMeta(file)).toEqual({ customTitle: 'named early', agentName: null, aiTitle: 'late auto', entrypoint: 'claude-desktop-3p', cwd: '/tmp/u', version: '2.1.300', name: 'named early' });
+    });
+
+    test('so a long Desktop transcript whose tail lacks an entrypoint does not displace the terminal session', () => {
+      transcript('-tmp-y', id(12), 100, [user('/tmp/y'), { type: 'custom-title', customTitle: 'terminal' }]);
+      transcript('-tmp-y', DESKTOP, 5, [user('/tmp/y', 'claude-desktop-3p'), ...pad(200), { type: 'ai-title', aiTitle: 'desktop' }]);
+      procs = [[900009, '10:00', 'ttys009', CLI]];
+      files = { 900009: { cwd: '/tmp/y' } };
+      install();
+      expect(claudeSessions().map((r) => r.id)).toEqual([CLAUDE_ID, id(12)]);
+    });
+  });
+
+  test('ps elapsed times', () => {
+    expect([etimeSeconds('01:02'), etimeSeconds('03:01:02'), etimeSeconds('1-02:03:04'), etimeSeconds('soon')]).toEqual([62, 10862, 93784, null]);
   });
 });

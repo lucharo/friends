@@ -17,3 +17,15 @@ _Sources: README round trips, 2026-10-13. Created and verified 2026-10-14._
 No. friends reaches node sessions one way over ssh, and since Claude Desktop's 12 Oct 2026 update a node session's own `SendMessage` cannot reach Mac sessions. A relay was considered and rejected to keep friends minimal.
 
 _Created and verified 2026-10-14._
+
+## Why can't friends message a Claude session I can see running?
+
+Because it has no inbox socket. friends delivers through the session's inbox socket, the one Claude's cross-session messaging docs describe (there is no `claude inbox` command), and finds it through the session's record in `~/.claude/sessions/`. The docs list a session in Claude's own `/list-agents` "only when it binds an inbox socket", so Claude's `SendMessage` cannot reach such a session either. friends still lists such a session, from the `claude` process and its transcript, with RECEIVE `no*`, and `friends resolve` names it and says why it cannot receive. On Claude Code 2.1.300 a session skips its record when it is a child session (a `claude` started from a Claude Bash tool outside tmux, which exports `CLAUDE_CODE_CHILD_SESSION`), a team agent, a diskless run or a parked spare, and loses it when the write fails. The 15 Oct 2026 case was most likely the last one: `disk-cleanup-emergency`, a terminal `claude` started while the disk was full (its own transcript logs `ENOSPC` a minute later), ran with neither a record nor a socket, none of the skip conditions applied, and a fresh 2.1.300 in a throwaway config dir wrote both, with and without `--dangerously-skip-permissions`. A restart with free disk space (`claude --resume <uuid>` keeps the conversation) runs the same registration, so it should get an inbox.
+
+_Sources: the 2.1.300 binary (`hp()` and `NXe()` gate the pid-file write in `iG()`); code.claude.com/docs/en/cross-session-messaging ("The session's inbox socket"); `lib/claude-procs.mjs`; tests "Claude sessions without a session record". Created and verified 2026-10-15._
+
+## Does finding sessions without a record depend on one machine's setup?
+
+No. It reads the process table with `ps`, open files with `lsof` (only for `claude` processes that have no record), and transcripts under `CLAUDE_CONFIG_DIR` in Claude Code's own project-folder naming, so nothing in it is tied to one machine (it was tested on macOS; Linux uses the same `ps` and `lsof` fields but is untested). Without `lsof` it simply lists nothing extra. It is local only: the remote lookup over ssh still reads records alone. The wider assumption is older and applies to every Claude target: the `~/.claude/sessions/` registry friends reads is undocumented (the docs give the socket path only through `/status` and `CLAUDE_CODE_MESSAGING_SOCKET`), so a Claude Code release that changes it breaks discovery.
+
+_Sources: `lib/claude-procs.mjs`; `lib/friends.mjs` `remoteScript`. Created and verified 2026-10-15._
