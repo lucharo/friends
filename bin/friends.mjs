@@ -7,13 +7,15 @@ import { claudeSessions, codexSessions, detectSelf, piSessions, remoteClaudeSess
 const USAGE = `friends: message Claude Code, Codex and Pi sessions on this machine
 
   friends ls [--json] [--remote]     live sessions (--remote adds Claude sessions on the ssh host)
-  friends send <target> [--reply-to <target>] [--no-reply] [--from-mode prompting|bypass] [--local] < message
+  friends send <target> [--check] [--reply-to <target>] [--no-reply] [--from-mode prompting|bypass] [--local] < message
   friends whoami [--json]            the session this command runs in, i.e. your reply route
   friends resolve <target> [--local] the one live session a target names, as JSON (or why not)
 
 Targets: claude:<name|uuid>, codex:<thread uuid|name>, pi:<name|id>.
 A claude: target not found here is looked up on FRIENDS_REMOTE_HOST (default remote-host),
-one way: no reply route back. "written"/"queued" is submission, not delivery.`;
+one way: no reply route back. "written"/"queued" is submission, not delivery.
+--check resolves the target and reports permission uncertainty without reading stdin or sending.
+Claude sends warn before writing: its live inbound policy is unavailable through this transport.`;
 
 const home = (p = '') => p.replace(homedir(), '~');
 
@@ -41,14 +43,22 @@ async function main(argv) {
   if (!cmd || cmd === '-h' || cmd === '--help' || cmd === 'help') return console.log(USAGE);
   if (cmd === 'ls') {
     const { values } = parseArgs({ args: rest, options: { json: { type: 'boolean' }, remote: { type: 'boolean' } } });
-    const rows = [...claudeSessions(), ...codexSessions(), ...piSessions()];
+    const rows = [];
     const errors = [];
-    if (values.remote) {
-      try { rows.push(...remoteClaudeSessions()); } catch (e) { errors.push(e.message); }
+    for (const [name, list] of [['claude', claudeSessions], ['codex', codexSessions], ['pi', piSessions]]) {
+      try { rows.push(...list()); } catch (error) { errors.push(`${name}: ${error.message}`); }
     }
-    if (values.json) return console.log(JSON.stringify(values.remote ? { sessions: rows, errors } : rows, null, 2));
-    console.log(table(rows, detectSelf()));
-    for (const e of errors) console.error(`remote: ${e}`);
+    if (values.remote) {
+      try { rows.push(...remoteClaudeSessions()); } catch (e) { errors.push(`remote: ${e.message}`); }
+    }
+    if (values.json) console.log(JSON.stringify(values.remote || errors.length ? { sessions: rows, errors } : rows, null, 2));
+    else {
+      let me;
+      try { me = detectSelf(); } catch (error) { errors.push(`sender: ${error.message}`); }
+      console.log(table(rows, me));
+    }
+    for (const error of errors) console.error(`Inventory incomplete: ${error}`);
+    if (errors.length) process.exitCode = 1;
     return;
   }
   if (cmd === 'whoami') {
@@ -65,11 +75,11 @@ async function main(argv) {
   }
   if (cmd === 'send') {
     const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: {
-      'reply-to': { type: 'string' }, 'no-reply': { type: 'boolean' }, 'from-mode': { type: 'string' }, local: { type: 'boolean' },
+      'reply-to': { type: 'string' }, 'no-reply': { type: 'boolean' }, 'from-mode': { type: 'string' }, local: { type: 'boolean' }, check: { type: 'boolean' },
     } });
     if (positionals.length !== 1) throw new Error('Give exactly one target: friends send <target> < message');
-    const result = await send(positionals[0], readFileSync(0, 'utf8'), {
-      replyTo: values['reply-to'], noReply: values['no-reply'], mode: values['from-mode'], remote: !values.local,
+    const result = await send(positionals[0], values.check ? undefined : readFileSync(0, 'utf8'), {
+      replyTo: values['reply-to'], noReply: values['no-reply'], mode: values['from-mode'], remote: !values.local, check: values.check,
     });
     return console.log(JSON.stringify(result));
   }

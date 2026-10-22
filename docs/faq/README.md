@@ -6,6 +6,14 @@ It doesn't have to. friends walks up its own parent processes to the nearest Cla
 
 _Sources: `lib/friends.mjs` `detectSelf`; tests "automatic sender detection". Created and verified 2026-10-14._
 
+## What if Codex's state database cannot be opened?
+
+`friends ls` preserves the sessions it can read, prints `Inventory incomplete` with the failing database path, and exits 1. With `--json`, this result is `{ "sessions": [...], "errors": [...] }`; a complete local inventory keeps its usual array. Check the configured `CODEX_HOME` and access to the database directory, including WAL/SHM files. friends does not modify the database or retry with a different SQLite mode.
+
+If process ancestry proves the sender is Codex, its `CODEX_THREAD_ID` still identifies it for a message to Claude or Pi. The CLI warns that permission mode and reply capability could not be verified, omits the sender-mode declaration and reply route, and leaves Claude permission compatibility unknown. Direct Codex resolution and sends still fail with the database diagnostic rather than pretending the target is missing. An inherited thread ID without a Codex ancestor does not establish sender identity.
+
+_Sources: `lib/friends.mjs` `readCodexState` and `detectSelf`; `bin/friends.mjs`; isolated real SQLite CANTOPEN and readable-database controls in `test/codex-state.test.mjs`. Created and verified 2026-10-22._
+
 ## Does the receiving session need friends and the skills installed?
 
 It needs the CLI, not the skills. Every message carries its full reply command, so a Claude or Codex session with no friends skill still knows what to run (a skill-less Claude replied in testing), but it needs `friends` on its `PATH` to run it. A Pi session replies with `send_message`, which needs the pi-x-session-messaging extension that takes `claude:` and `codex:` targets. So friends assumes one machine with the CLI installed once and skills shared, as in Luis's setup.
@@ -17,6 +25,14 @@ _Sources: README round trips, 2026-10-13. Created and verified 2026-10-14._
 No. friends reaches node sessions one way over ssh, and since Claude Desktop's 12 Oct 2026 update a node session's own `SendMessage` cannot reach Mac sessions. A relay was considered and rejected to keep friends minimal.
 
 _Created and verified 2026-10-14._
+
+## Why did friends say written when Claude saw nothing?
+
+`written` means the socket write completed; it does not report Claude's inbound decision. Claude's default policy holds a message when its sender and recipient use different permission classes. Auto counts as prompting. Desktop cannot show the approval dialog, so a default-held message normally expires after five minutes unless the user changes the applicable mode or policy. Explicit `crossSessionInbound` settings can hold or refuse messages too.
+
+friends now warns **before writing**, naming the risk for the sender's actual declared class, and includes `permissionCheck.status: "unknown"` in its JSON. Run `friends send claude:<target> --check` for the same warning without posting or supplying a message. This is an uncertainty warning, not a detected mismatch: the session registry has no live mode or effective inbound-policy field. Startup arguments, transcript `mode`, and settings files cannot prove the current policy, so friends does not infer acceptance from them. The one-way transport has no delivery acknowledgement on its write connection. Ask the recipient's user to check; do not resend with a different sender declaration. A reply or acknowledgement confirms receipt.
+
+_Sources: [Claude inbound controls](https://code.claude.com/docs/en/cross-session-messaging#control-inbound-messages); Claude Code 2.1.308 registry and inbox implementation (its status notices use a separate reverse peer address); `lib/friends.mjs`; tests "Claude permission warning". Created and verified 2026-10-22._
 
 ## Why can't friends message a Claude session I can see running?
 

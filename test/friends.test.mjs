@@ -139,6 +139,23 @@ describe('framing', () => {
 });
 
 describe('send', () => {
+  test('check resolves a Pi target without creating an inbox message', async () => {
+    const inbox = join(root, 'xsm', 'inbox');
+    expect(await send('pi:alpha', undefined, { check: true })).toEqual({
+      status: 'checked', harness: 'pi', id: PI_ID, name: 'alpha', host: 'local', submitted: false,
+    });
+    expect(() => readdirSync(inbox)).toThrow(/ENOENT/);
+  });
+  test('Claude permission warning happens before the transport writes', async () => {
+    const before = received.length;
+    const warnings = [];
+    await expect(send('claude:Test Claude', 'must not be posted', {
+      replyTo: `pi:${PI_ID}`,
+      onWarning: (warning) => { warnings.push(warning); throw new Error('Stop at warning'); },
+    })).rejects.toThrow('Stop at warning');
+    expect(warnings).toEqual([expect.stringContaining('This sender declares bypass')]);
+    expect(received.length).toBe(before);
+  });
   test('to Claude: one JSON line on the inbox socket, with a Pi reply route', async () => {
     const out = await send('claude:Test Claude', 'hello', { replyTo: `pi:${PI_ID}` });
     expect(out).toMatchObject({ status: 'written', harness: 'claude', id: CLAUDE_ID, delivery: 'unconfirmed', replyRoute: true });
