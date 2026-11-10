@@ -36,6 +36,18 @@ friends ls
 echo "Hello from the terminal" | friends send claude:<name or uuid>
 ```
 
+`friends ls` lists the live sessions with a `RECEIVE` column; `send` prints a permission warning on stderr and a JSON result on stdout, and the message appears in that Claude session:
+
+```text
+HARNESS  NAME   ID                                    CWD           RECEIVE
+claude   bob    eca6a9df-099f-4302-bad0-24bf566095bc  ~/work/bob    yes
+claude   alice  88b3e32d-72c0-4a04-af89-2e8c4854e30c  ~/work/alice  yes
+
+{"status":"written","harness":"claude","id":"eca6a9df-…","name":"bob","host":"local","delivery":"unconfirmed",…,"replyRoute":false}
+```
+
+`written` means the inbox accepted the message, not that the session read it. From a plain terminal there is no reply route; run from inside a Claude, Codex or Pi session, `send` adds one so the recipient can answer.
+
 In Codex, use `/message-claude`, then ask:
 
 ```text
@@ -70,7 +82,7 @@ Each harness answers in its own way: Claude and Codex run `friends send <sender>
 
 Set `FRIENDS_REMOTE_HOST` to an ssh host to reach Claude sessions there too: a `claude:` target not found locally is then looked up on that host and written over ssh with the host's `node`, and `friends ls --remote` lists its sessions. It is off by default. That route is one way: the message says there is no reply route back. Claude Desktop used to forward an SSH session's `SendMessage` to local sessions, but since its 12 Oct 2026 update an SSH session can reach only sessions on its own host.
 
-Verified on 2026-10-13 with Claude Code 2.1.296, Codex CLI 0.162.0, Pi 1.1.0 and Bun 1.4.2: Pi to Claude to Pi, Pi to Codex to Pi, Claude to Codex to Claude, and Mac to a Linux ssh host. Linux beyond that remote route is untested; Windows is unsupported. Sender and receiver must share one profile per harness (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_XSM_DIR`); a reply route names a session, not a profile. The wire formats can change between versions; repeat the exchanges after upgrading a CLI.
+Verified on 2026-10-13 with Claude Code 2.1.296, Codex CLI 0.162.0, Pi 1.1.0 and Bun 1.4.2: Pi to Claude to Pi, Pi to Codex to Pi, Claude to Codex to Claude, and Mac to a Linux ssh host. Claude to Claude to Claude verified again from a clean install on 2026-11-10 with Claude Code 2.1.322 and Bun 1.4.4. Linux beyond that remote route is untested; Windows is unsupported. Sender and receiver must share one profile per harness (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_XSM_DIR`); a reply route names a session, not a profile. The wire formats can change between versions; repeat the exchanges after upgrading a CLI.
 
 `written` and `queued` confirm submission, not receipt; friends never retries. Before writing to Claude, friends warns on stderr and returns `permissionCheck.status: "unknown"` in its JSON result. Claude does not publish its live permission class or effective inbound policy through this transport, so friends cannot certify compatibility. `--check` performs this preflight without posting; a successful check means the target resolved, not that Claude will accept a message.
 
@@ -102,7 +114,7 @@ Related projects cover adjacent workflows:
 
 Our search found no exact match for the native inbox-and-queue route; it was not exhaustive. The linked READMEs describe each project's approach.
 
-Created 2026-10-06; updated and verified 2026-10-13.
+Created 2026-10-06; updated 2026-11-10.
 
 </details>
 
