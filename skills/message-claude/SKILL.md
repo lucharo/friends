@@ -1,13 +1,13 @@
 ---
 name: message-claude
-description: Send a message to a running Claude Code session on this machine (or one way to the remote host) with the friends CLI, giving Claude a native reply route back to this session.
+description: Send a message to a running Claude Code session on this machine (or one way to a Claude session on an ssh host) with the friends CLI, giving Claude a native reply route back to this session.
 ---
 
 # Message Claude
 
 Requires the `friends` CLI (`friends --help`). If it is missing, report that prerequisite; the README installs it.
 
-1. Run `friends ls`. Pick the user's intended Claude session and take its `claude:<uuid>` target. Ask when the target is ambiguous; `RECEIVE no` means it has no inbox and cannot receive. A Claude session on the remote host shows with `friends ls --remote`; messages there are one way, with no reply route.
+1. Run `friends ls`. Pick the user's intended Claude session and take its `claude:<uuid>` target. Ask when the target is ambiguous; `RECEIVE no` means it has no inbox and cannot receive. When `FRIENDS_REMOTE_HOST` names an ssh host, its Claude sessions show with `friends ls --remote`; messages there are one way, with no reply route.
    When checking permission compatibility, run `friends send claude:CLAUDE_SESSION_UUID --check`: it resolves the target and warns without sending. The recipient's policy remains **unknown**; a successful check does not prove acceptance. The same warning appears before a real send. If Codex state is unreadable, its sender mode and reply capability also remain unknown and friends omits the reply route.
 2. Write the message to a unique mode-0600 temporary file (for example, with `mktemp`), then run, quoting the path, and delete the file after the attempt:
 
