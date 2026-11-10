@@ -125,7 +125,7 @@ describe('framing', () => {
   test('reply route in the recipient\'s own style', () => {
     expect(replyRoute(pi, { harness: 'pi', host: 'local' })).toBe(`To reply, call send_message with to="pi:${PI_ID}". Send once; no acknowledgement is needed unless asked.`);
     expect(replyRoute(pi, { harness: 'codex', host: 'local' }, 'friends')).toContain(`friends send pi:${PI_ID} < REPLY_FILE`);
-    expect(replyRoute(pi, { harness: 'claude', host: 'remote' })).toMatch(/no reply route from remote host/);
+    expect(replyRoute(pi, { harness: 'claude', host: 'gpu-box' })).toMatch(/no reply route from here back to the sender/);
   });
   test('cap and empty message', () => {
     expect(() => compose(' \n', pi, { harness: 'pi', host: 'local' })).toThrow(/empty/);

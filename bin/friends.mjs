@@ -12,7 +12,7 @@ const USAGE = `friends: message Claude Code, Codex and Pi sessions on this machi
   friends resolve <target> [--local] the one live session a target names, as JSON (or why not)
 
 Targets: claude:<name|uuid>, codex:<thread uuid|name>, pi:<name|id>.
-A claude: target not found here is looked up on FRIENDS_REMOTE_HOST (default remote-host),
+A claude: target not found here is looked up on the ssh host FRIENDS_REMOTE_HOST when it is set,
 one way: no reply route back. "written"/"queued" is submission, not delivery.
 --check resolves the target and reports permission uncertainty without reading stdin or sending.
 Claude sends warn before writing: its live inbound policy is unavailable through this transport.`;
