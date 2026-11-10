@@ -2,10 +2,10 @@ import { Database } from 'bun:sqlite';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { claudeFrame, claudeSessions, codexSessions, compose, label, parseTarget, piShort, replyRoute, resolve, send, shellQuote } from '../lib/friends.mjs';
+import { claudeFrame, claudeSessions, codexSessions, compose, home, label, parseTarget, piShort, replyRoute, resolve, send, shellQuote } from '../lib/friends.mjs';
 import { etimeSeconds, limits, probes, transcriptMeta } from '../lib/claude-procs.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'friends-test-'));
@@ -108,6 +108,14 @@ describe('targets', () => {
     expect(() => resolve('codex:reviewer')).toThrow(/ambiguous/);
     expect(() => resolve('codex:%%%%%%%%')).toThrow(/No live session/);
     expect(() => resolve('codex:01a1360_')).toThrow(/No live session/);
+  });
+});
+
+describe('home', () => {
+  test('shortens only a leading home directory', () => {
+    const h = homedir();
+    expect([home(h), home(`${h}/work`), home(`/private${h}/work`), home(`${h}-other/work`), home('')])
+      .toEqual(['~', '~/work', `/private${h}/work`, `${h}-other/work`, '']);
   });
 });
 
